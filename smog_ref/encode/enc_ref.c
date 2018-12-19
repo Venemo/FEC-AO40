@@ -1,35 +1,35 @@
-/* 
- * Reference encoder for proposed coded AO-40 telemetry format - v1.0  7 Jan 2002
- * Copyright 2002, Phil Karn, KA9Q
- * This software may be used under the terms of the GNU Public License (GPL)
- */
 
 /*
- * Revised and modified by szabolor
- * 2015
+ * Reference encoder for proposed coded AO-40 telemetry format - v1.0  7 Jan 2002
+ * Revised and modified for SMOG-1 by szabolor
+ *
+ * Copyright 2002, Phil Karn, KA9Q
+ * Copyright 2015-2017, Lóránt Szabó
+ *
+ * This software may be used under the terms of the GNU Public License (GPL)
  */
 
 #include <stdint.h>
 #include "enc_ref.h"
 
-#define SYNC_POLY      0x48
-#define SCRAMBLER_POLY 0x95
-#define CPOLYA         0x4f // 79
-#define CPOLYB         0x6d // 109
-#define GF_POLY        0x187
-#define A0             255
+#define AO40_SYNC_POLY      0x48
+#define AO40_SCRAMBLER_POLY 0x95
+#define AO40_CPOLYA         0x4f // 79
+#define AO40_CPOLYB         0x6d // 109
+#define AO40_GF_POLY        0x187
+#define AO40_A0             255
 
 const uint8_t RS_poly[] = {249,59,66,4,43,126,251,97,30,3,213,50,66,170,5,24};
-uint8_t RS_block[2][32];
+static uint8_t RS_block[2][32];
 static uint16_t Nbytes;
 static uint8_t Bmask;
 static uint16_t Bindex;
 static uint8_t Scrambler;
 static uint8_t Conv_sr;
-uint8_t *Interleaver;
+static uint8_t *Interleaver;
 
 // memory workaround: to LUT or not to LUT...
-#ifndef LOW_MEMORY
+#ifndef AO40_LOW_MEMORY
   // No need for low memory, use LUT
   #define INDEX_OF(x) ( Index_of[ (x) ] )
   #define ALPHA_TO(x) ( Alpha_to[ (x) ] )
@@ -79,12 +79,12 @@ uint8_t *Interleaver;
     uint8_t i = 0;
 
     if (x == 0)
-      return A0;
+      return AO40_A0;
 
     while (sr != x) {
       sr <<= 1;
       if (sr & 0x100)
-        sr ^= GF_POLY;
+        sr ^= AO40_GF_POLY;
       sr &= 0xff;
       ++i;
     }
@@ -96,20 +96,20 @@ uint8_t *Interleaver;
     uint16_t sr = 1;
     uint8_t i;
 
-    if (x == A0)
+    if (x == AO40_A0)
       return 0;
 
     for (i = 0; i < x; ++i) {
       sr <<= 1;
       if (sr & 0x100)
-        sr ^= GF_POLY;
+        sr ^= AO40_GF_POLY;
       sr &= 0xff;
     }
 
     return sr;
   }
 
-#endif /* LOW_MEMORY */
+#endif /* AO40_LOW_MEMORY */
 
 static inline uint8_t mod255(uint16_t x){
   while (x >= 255)
@@ -145,8 +145,8 @@ static void encode_and_interleave(uint8_t c, uint8_t cnt){
   while(cnt-- != 0){
     Conv_sr = (Conv_sr << 1) | (c >> 7);
     c <<= 1;
-    interleave_symbol(parity(Conv_sr & CPOLYA));
-    interleave_symbol(!parity(Conv_sr & CPOLYB)); /* Second encoder symbol is inverted */
+    interleave_symbol(parity(Conv_sr & AO40_CPOLYA));
+    interleave_symbol(!parity(Conv_sr & AO40_CPOLYB)); /* Second encoder symbol is inverted */
   }    
 }
 
@@ -155,7 +155,7 @@ static void scramble_and_encode(uint8_t c){
 
   c ^= Scrambler;
   for (i = 0; i < 8; ++i)
-    Scrambler = (Scrambler << 1) | parity(Scrambler & SCRAMBLER_POLY);
+    Scrambler = (Scrambler << 1) | parity(Scrambler & AO40_SCRAMBLER_POLY);
   encode_and_interleave(c, 8);
 }
 
@@ -186,7 +186,7 @@ void init_encoder(void){
     if(sr & 64) { // TODO: 0x40
       Interleaver[10*i] |= 0x80;
     }
-    sr = (sr << 1) | parity(sr & SYNC_POLY);
+    sr = (sr << 1) | parity(sr & AO40_SYNC_POLY);
   }
   reset_encoder();
 }
@@ -200,7 +200,7 @@ void encode_byte(uint8_t c){
   rp = RS_block[Nbytes & 1];
   feedback = INDEX_OF(c ^ rp[0]);
   
-  if (feedback != A0){
+  if (feedback != AO40_A0){
     for (i = 0; i < 15; ++i) {
       t = ALPHA_TO(mod255(feedback + RS_poly[i]));
       rp[i+1] ^= t;
@@ -212,7 +212,7 @@ void encode_byte(uint8_t c){
   for (i = 0; i < 31; ++i)
     rp[i] = rp[i+1];
 
-  if (feedback != A0){
+  if (feedback != AO40_A0){
     rp[31] = ALPHA_TO(feedback);
   } else {
     rp[31] = 0;
@@ -241,7 +241,7 @@ void encode_parity(void) {
  *             It holds the encoded data in byte format
  */ 
 
-void encode_data(uint8_t data[256], uint8_t encoded[650]) {
+void encode_data(const uint8_t data[256], uint8_t encoded[650]) {
   uint16_t i;
 
   // Use already allocated array to store encoded data
@@ -260,8 +260,8 @@ void encode_data(uint8_t data[256], uint8_t encoded[650]) {
 }
 
 // for testing purpose enable built-in byte->bit converter
-#ifdef ENABLE_BIT_OUTPUT
-void encode_data_bit(uint8_t data[256], uint8_t bit_encoded[5200]) {
+#ifdef AO40_ENABLE_BIT_OUTPUT
+void encode_data_bit(const uint8_t data[256], uint8_t bit_encoded[5200]) {
   uint8_t encoded[650] = {0};
   uint16_t i;
 
@@ -279,4 +279,4 @@ void encode_data_bit(uint8_t data[256], uint8_t bit_encoded[5200]) {
 #endif
   }
 }
-#endif
+#endif /* AO40_ENABLE_BIT_OUTPUT */
