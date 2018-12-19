@@ -18,74 +18,89 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ******************************************************************/
 
-#include "spiral-vit_scalar_1280.h"
+#include "ao40short_spiral-vit_scalar_1280.h"
+
+static inline int ao40short_posix_memalign(void **memptr, size_t alignment, size_t size) {
+#ifdef _WIN32
+    *memptr = _aligned_malloc(size, alignment);
+    return (*memptr == NULL) ? errno : 0;
+#else
+    return posix_memalign(memptr, alignment, size);
+#endif
+}
+
+AO40SHORT_COMPUTETYPE ao40short_Branchtab[AO40SHORT_NUMSTATES/2*AO40SHORT_RATE] __attribute__ ((aligned (16)));
 
 /* Initialize Viterbi decoder for start of new frame */
-int init_viterbi(void *p, int starting_state) {
-  struct v *vp = p;
+int ao40short_init_viterbi(void *p, int starting_state) {
+  struct ao40short_v *vp = p;
   int i;
 
   if (p == NULL)
     return -1;
-  for(i=0;i<NUMSTATES;i++)
+  for(i=0;i<AO40SHORT_NUMSTATES;i++)
       vp->metrics1.t[i] = 63;
 
   vp->old_metrics = &vp->metrics1;
   vp->new_metrics = &vp->metrics2;
-  vp->old_metrics->t[starting_state & (NUMSTATES-1)] = 0; /* Bias known start state */
+  vp->old_metrics->t[starting_state & (AO40SHORT_NUMSTATES-1)] = 0; /* Bias known start state */
   return 0;
 }
 
 /* Create a new instance of a Viterbi decoder */
-void *create_viterbi(int len){
+void *ao40short_create_viterbi(int len){
   void *p;
-  struct v *vp;
+  struct ao40short_v *vp;
   static int Init = 0;
 
   if(!Init){
     int state, i;
-    int polys[RATE] = POLYS;
-    for (state = 0; state < NUMSTATES/2; ++state) {
-      for (i = 0; i < RATE; ++i) {
-        Branchtab[i * NUMSTATES / 2 + state] = (polys[i] < 0) ^ parity((2*state) & abs(polys[i])) ? 255 : 0;
+    int polys[AO40SHORT_RATE] = AO40SHORT_POLYS;
+    for (state = 0; state < AO40SHORT_NUMSTATES/2; ++state) {
+      for (i = 0; i < AO40SHORT_RATE; ++i) {
+        ao40short_Branchtab[i * AO40SHORT_NUMSTATES / 2 + state] = (polys[i] < 0) ^ ao40short_parity((2*state) & abs(polys[i])) ? 255 : 0;
       }
     }
     Init++;
   }
 
-  if(posix_memalign((void**)&p, 16,sizeof(struct v)))
+  if(ao40short_posix_memalign((void**)&p, 16,sizeof(struct ao40short_v)))
     return NULL;
 
-  vp = (struct v *)p;
+  vp = (struct ao40short_v *)p;
 
-  if(posix_memalign((void**)&vp->decisions, 16,(len+(K-1))*sizeof(decision_t))){
-    free(vp);
+  if(ao40short_posix_memalign((void**)&vp->decisions, 16,(len+(AO40SHORT_K-1))*sizeof(ao40short_decision_t))){
+    #ifdef __WIN32
+      _aligned_free(vp);
+    #else
+      free(vp);
+    #endif
     return NULL;
   }
-  init_viterbi(vp,0);
+  ao40short_init_viterbi(vp,0);
 
   return vp;
 }
 
 /* Viterbi chainback */
-int chainback_viterbi(
+int ao40short_chainback_viterbi(
       void *p,
       uint8_t *data, /* Decoded output data */
       uint32_t nbits, /* Number of data bits */
       uint32_t endstate){ /* Terminal encoder state */
-  struct v *vp = p;
-  decision_t *d;
+  struct ao40short_v *vp = p;
+  ao40short_decision_t *d;
 
-  /* ADDSHIFT and SUBSHIFT make sure that the thing returned is a byte. */
-#if (K-1<8)
-#define ADDSHIFT (8-(K-1))
-#define SUBSHIFT 0
-#elif (K-1>8)
-#define ADDSHIFT 0
-#define SUBSHIFT ((K-1)-8)
+  /* AO40SHORT_ADDSHIFT and AO40SHORT_SUBSHIFT make sure that the thing returned is a byte. */
+#if (AO40SHORT_K-1<8)
+#define AO40SHORT_ADDSHIFT (8-(AO40SHORT_K-1))
+#define AO40SHORT_SUBSHIFT 0
+#elif (AO40SHORT_K-1>8)
+#define AO40SHORT_ADDSHIFT 0
+#define AO40SHORT_SUBSHIFT ((AO40SHORT_K-1)-8)
 #else
-#define ADDSHIFT 0
-#define SUBSHIFT 0
+#define AO40SHORT_ADDSHIFT 0
+#define AO40SHORT_SUBSHIFT 0
 #endif
 
   if(p == NULL)
@@ -95,33 +110,38 @@ int chainback_viterbi(
    * accumulate a full byte of decoded data
    */
 
-  endstate = (endstate%NUMSTATES) << ADDSHIFT;
+  endstate = (endstate%AO40SHORT_NUMSTATES) << AO40SHORT_ADDSHIFT;
 
   /* The store into data[] only needs to be done every 8 bits.
    * But this avoids a conditional branch, and the writes will
    * combine in the cache anyway
    */
-  d += (K-1); /* Look past tail */
+  d += (AO40SHORT_K-1); /* Look past tail */
   while(nbits-- != 0){
     int k;
-    k = (d[nbits].w[(endstate>>ADDSHIFT)/32] >> ((endstate>>ADDSHIFT)%32)) & 1;
-    endstate = (endstate >> 1) | (k << (K-2+ADDSHIFT));
-    data[nbits>>3] = endstate>>SUBSHIFT;
+    k = (d[nbits].w[(endstate>>AO40SHORT_ADDSHIFT)/32] >> ((endstate>>AO40SHORT_ADDSHIFT)%32)) & 1;
+    endstate = (endstate >> 1) | (k << (AO40SHORT_K-2+AO40SHORT_ADDSHIFT));
+    data[nbits>>3] = endstate>>AO40SHORT_SUBSHIFT;
   }
   return 0;
 }
 
 /* Delete instance of a Viterbi decoder */
-void delete_viterbi(void *p){
-  struct v *vp = p;
+void ao40short_delete_viterbi(void *p){
+  struct ao40short_v *vp = p;
 
   if(vp != NULL){
+    #ifdef __WIN32
+      _aligned_free(vp->decisions);
+      _aligned_free(vp);
+    #else
     free(vp->decisions);
     free(vp);
+    #endif
   }
 }
 
-void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsigned int  *dec, unsigned int  *Branchtab) {
+void AO40SHORT_FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsigned int  *dec, unsigned int  *ao40short_Branchtab) {
     for(int i3 = 0; i3 <= 642; i3++) {
         int a1442, a1443, a1444, a1445, a1446, a1447, a1448
                 , a1449, a1450, a1451, a1452, a1453, a1454, a1455, a1456
@@ -256,10 +276,10 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
                 , t389;
         a1442 = (4*i3);
         a1443 = syms[a1442];
-        t197 = ((a1443)^(Branchtab[0]));
+        t197 = ((a1443)^(ao40short_Branchtab[0]));
         a1444 = (1 + a1442);
         a1445 = syms[a1444];
-        a1446 = ((a1445)^(Branchtab[32]));
+        a1446 = ((a1445)^(ao40short_Branchtab[32]));
         t198 = (t197 + a1446);
         t199 = (510 - t198);
         m265 = (X[0] + t198);
@@ -279,8 +299,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1448] = ((a1449)|(a1452));
         Y[0] = s130;
         Y[1] = s131;
-        t200 = ((a1443)^(Branchtab[1]));
-        a1453 = ((a1445)^(Branchtab[33]));
+        t200 = ((a1443)^(ao40short_Branchtab[1]));
+        a1453 = ((a1445)^(ao40short_Branchtab[33]));
         t201 = (t200 + a1453);
         t202 = (510 - t201);
         m269 = (X[1] + t201);
@@ -298,8 +318,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1448] = ((a1454)|(a1457));
         Y[2] = s132;
         Y[3] = s133;
-        t203 = ((a1443)^(Branchtab[2]));
-        a1458 = ((a1445)^(Branchtab[34]));
+        t203 = ((a1443)^(ao40short_Branchtab[2]));
+        a1458 = ((a1445)^(ao40short_Branchtab[34]));
         t204 = (t203 + a1458);
         t205 = (510 - t204);
         m273 = (X[2] + t204);
@@ -317,8 +337,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1448] = ((a1459)|(a1462));
         Y[4] = s134;
         Y[5] = s135;
-        t206 = ((a1443)^(Branchtab[3]));
-        a1463 = ((a1445)^(Branchtab[35]));
+        t206 = ((a1443)^(ao40short_Branchtab[3]));
+        a1463 = ((a1445)^(ao40short_Branchtab[35]));
         t207 = (t206 + a1463);
         t208 = (510 - t207);
         m277 = (X[3] + t207);
@@ -336,8 +356,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1448] = ((a1464)|(a1467));
         Y[6] = s136;
         Y[7] = s137;
-        t209 = ((a1443)^(Branchtab[4]));
-        a1468 = ((a1445)^(Branchtab[36]));
+        t209 = ((a1443)^(ao40short_Branchtab[4]));
+        a1468 = ((a1445)^(ao40short_Branchtab[36]));
         t210 = (t209 + a1468);
         t211 = (510 - t210);
         m281 = (X[4] + t210);
@@ -355,8 +375,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1448] = ((a1469)|(a1472));
         Y[8] = s138;
         Y[9] = s139;
-        t212 = ((a1443)^(Branchtab[5]));
-        a1473 = ((a1445)^(Branchtab[37]));
+        t212 = ((a1443)^(ao40short_Branchtab[5]));
+        a1473 = ((a1445)^(ao40short_Branchtab[37]));
         t213 = (t212 + a1473);
         t214 = (510 - t213);
         m285 = (X[5] + t213);
@@ -374,8 +394,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1448] = ((a1474)|(a1477));
         Y[10] = s140;
         Y[11] = s141;
-        t215 = ((a1443)^(Branchtab[6]));
-        a1478 = ((a1445)^(Branchtab[38]));
+        t215 = ((a1443)^(ao40short_Branchtab[6]));
+        a1478 = ((a1445)^(ao40short_Branchtab[38]));
         t216 = (t215 + a1478);
         t217 = (510 - t216);
         m289 = (X[6] + t216);
@@ -393,8 +413,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1448] = ((a1479)|(a1482));
         Y[12] = s142;
         Y[13] = s143;
-        t218 = ((a1443)^(Branchtab[7]));
-        a1483 = ((a1445)^(Branchtab[39]));
+        t218 = ((a1443)^(ao40short_Branchtab[7]));
+        a1483 = ((a1445)^(ao40short_Branchtab[39]));
         t219 = (t218 + a1483);
         t220 = (510 - t219);
         m293 = (X[7] + t219);
@@ -412,8 +432,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1448] = ((a1484)|(a1487));
         Y[14] = s144;
         Y[15] = s145;
-        t221 = ((a1443)^(Branchtab[8]));
-        a1488 = ((a1445)^(Branchtab[40]));
+        t221 = ((a1443)^(ao40short_Branchtab[8]));
+        a1488 = ((a1445)^(ao40short_Branchtab[40]));
         t222 = (t221 + a1488);
         t223 = (510 - t222);
         m297 = (X[8] + t222);
@@ -431,8 +451,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1448] = ((a1489)|(a1492));
         Y[16] = s146;
         Y[17] = s147;
-        t224 = ((a1443)^(Branchtab[9]));
-        a1493 = ((a1445)^(Branchtab[41]));
+        t224 = ((a1443)^(ao40short_Branchtab[9]));
+        a1493 = ((a1445)^(ao40short_Branchtab[41]));
         t225 = (t224 + a1493);
         t226 = (510 - t225);
         m301 = (X[9] + t225);
@@ -450,8 +470,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1448] = ((a1494)|(a1497));
         Y[18] = s148;
         Y[19] = s149;
-        t227 = ((a1443)^(Branchtab[10]));
-        a1498 = ((a1445)^(Branchtab[42]));
+        t227 = ((a1443)^(ao40short_Branchtab[10]));
+        a1498 = ((a1445)^(ao40short_Branchtab[42]));
         t228 = (t227 + a1498);
         t229 = (510 - t228);
         m305 = (X[10] + t228);
@@ -469,8 +489,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1448] = ((a1499)|(a1502));
         Y[20] = s150;
         Y[21] = s151;
-        t230 = ((a1443)^(Branchtab[11]));
-        a1503 = ((a1445)^(Branchtab[43]));
+        t230 = ((a1443)^(ao40short_Branchtab[11]));
+        a1503 = ((a1445)^(ao40short_Branchtab[43]));
         t231 = (t230 + a1503);
         t232 = (510 - t231);
         m309 = (X[11] + t231);
@@ -488,8 +508,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1448] = ((a1504)|(a1507));
         Y[22] = s152;
         Y[23] = s153;
-        t233 = ((a1443)^(Branchtab[12]));
-        a1508 = ((a1445)^(Branchtab[44]));
+        t233 = ((a1443)^(ao40short_Branchtab[12]));
+        a1508 = ((a1445)^(ao40short_Branchtab[44]));
         t234 = (t233 + a1508);
         t235 = (510 - t234);
         m313 = (X[12] + t234);
@@ -507,8 +527,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1448] = ((a1509)|(a1512));
         Y[24] = s154;
         Y[25] = s155;
-        t236 = ((a1443)^(Branchtab[13]));
-        a1513 = ((a1445)^(Branchtab[45]));
+        t236 = ((a1443)^(ao40short_Branchtab[13]));
+        a1513 = ((a1445)^(ao40short_Branchtab[45]));
         t237 = (t236 + a1513);
         t238 = (510 - t237);
         m317 = (X[13] + t237);
@@ -526,8 +546,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1448] = ((a1514)|(a1517));
         Y[26] = s156;
         Y[27] = s157;
-        t239 = ((a1443)^(Branchtab[14]));
-        a1518 = ((a1445)^(Branchtab[46]));
+        t239 = ((a1443)^(ao40short_Branchtab[14]));
+        a1518 = ((a1445)^(ao40short_Branchtab[46]));
         t240 = (t239 + a1518);
         t241 = (510 - t240);
         m321 = (X[14] + t240);
@@ -545,8 +565,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1448] = ((a1519)|(a1522));
         Y[28] = s158;
         Y[29] = s159;
-        t242 = ((a1443)^(Branchtab[15]));
-        a1523 = ((a1445)^(Branchtab[47]));
+        t242 = ((a1443)^(ao40short_Branchtab[15]));
+        a1523 = ((a1445)^(ao40short_Branchtab[47]));
         t243 = (t242 + a1523);
         t244 = (510 - t243);
         m325 = (X[15] + t243);
@@ -564,8 +584,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1448] = ((a1524)|(a1527));
         Y[30] = s160;
         Y[31] = s161;
-        t245 = ((a1443)^(Branchtab[16]));
-        a1528 = ((a1445)^(Branchtab[48]));
+        t245 = ((a1443)^(ao40short_Branchtab[16]));
+        a1528 = ((a1445)^(ao40short_Branchtab[48]));
         t246 = (t245 + a1528);
         t247 = (510 - t246);
         m329 = (X[16] + t246);
@@ -584,8 +604,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1529] = ((a1530)|(a1533));
         Y[32] = s162;
         Y[33] = s163;
-        t248 = ((a1443)^(Branchtab[17]));
-        a1534 = ((a1445)^(Branchtab[49]));
+        t248 = ((a1443)^(ao40short_Branchtab[17]));
+        a1534 = ((a1445)^(ao40short_Branchtab[49]));
         t249 = (t248 + a1534);
         t250 = (510 - t249);
         m333 = (X[17] + t249);
@@ -603,8 +623,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1529] = ((a1535)|(a1538));
         Y[34] = s164;
         Y[35] = s165;
-        t251 = ((a1443)^(Branchtab[18]));
-        a1539 = ((a1445)^(Branchtab[50]));
+        t251 = ((a1443)^(ao40short_Branchtab[18]));
+        a1539 = ((a1445)^(ao40short_Branchtab[50]));
         t252 = (t251 + a1539);
         t253 = (510 - t252);
         m337 = (X[18] + t252);
@@ -622,8 +642,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1529] = ((a1540)|(a1543));
         Y[36] = s166;
         Y[37] = s167;
-        t254 = ((a1443)^(Branchtab[19]));
-        a1544 = ((a1445)^(Branchtab[51]));
+        t254 = ((a1443)^(ao40short_Branchtab[19]));
+        a1544 = ((a1445)^(ao40short_Branchtab[51]));
         t255 = (t254 + a1544);
         t256 = (510 - t255);
         m341 = (X[19] + t255);
@@ -641,8 +661,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1529] = ((a1545)|(a1548));
         Y[38] = s168;
         Y[39] = s169;
-        t257 = ((a1443)^(Branchtab[20]));
-        a1549 = ((a1445)^(Branchtab[52]));
+        t257 = ((a1443)^(ao40short_Branchtab[20]));
+        a1549 = ((a1445)^(ao40short_Branchtab[52]));
         t258 = (t257 + a1549);
         t259 = (510 - t258);
         m345 = (X[20] + t258);
@@ -660,8 +680,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1529] = ((a1550)|(a1553));
         Y[40] = s170;
         Y[41] = s171;
-        t260 = ((a1443)^(Branchtab[21]));
-        a1554 = ((a1445)^(Branchtab[53]));
+        t260 = ((a1443)^(ao40short_Branchtab[21]));
+        a1554 = ((a1445)^(ao40short_Branchtab[53]));
         t261 = (t260 + a1554);
         t262 = (510 - t261);
         m349 = (X[21] + t261);
@@ -679,8 +699,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1529] = ((a1555)|(a1558));
         Y[42] = s172;
         Y[43] = s173;
-        t263 = ((a1443)^(Branchtab[22]));
-        a1559 = ((a1445)^(Branchtab[54]));
+        t263 = ((a1443)^(ao40short_Branchtab[22]));
+        a1559 = ((a1445)^(ao40short_Branchtab[54]));
         t264 = (t263 + a1559);
         t265 = (510 - t264);
         m353 = (X[22] + t264);
@@ -698,8 +718,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1529] = ((a1560)|(a1563));
         Y[44] = s174;
         Y[45] = s175;
-        t266 = ((a1443)^(Branchtab[23]));
-        a1564 = ((a1445)^(Branchtab[55]));
+        t266 = ((a1443)^(ao40short_Branchtab[23]));
+        a1564 = ((a1445)^(ao40short_Branchtab[55]));
         t267 = (t266 + a1564);
         t268 = (510 - t267);
         m357 = (X[23] + t267);
@@ -717,8 +737,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1529] = ((a1565)|(a1568));
         Y[46] = s176;
         Y[47] = s177;
-        t269 = ((a1443)^(Branchtab[24]));
-        a1569 = ((a1445)^(Branchtab[56]));
+        t269 = ((a1443)^(ao40short_Branchtab[24]));
+        a1569 = ((a1445)^(ao40short_Branchtab[56]));
         t270 = (t269 + a1569);
         t271 = (510 - t270);
         m361 = (X[24] + t270);
@@ -736,8 +756,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1529] = ((a1570)|(a1573));
         Y[48] = s178;
         Y[49] = s179;
-        t272 = ((a1443)^(Branchtab[25]));
-        a1574 = ((a1445)^(Branchtab[57]));
+        t272 = ((a1443)^(ao40short_Branchtab[25]));
+        a1574 = ((a1445)^(ao40short_Branchtab[57]));
         t273 = (t272 + a1574);
         t274 = (510 - t273);
         m365 = (X[25] + t273);
@@ -755,8 +775,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1529] = ((a1575)|(a1578));
         Y[50] = s180;
         Y[51] = s181;
-        t275 = ((a1443)^(Branchtab[26]));
-        a1579 = ((a1445)^(Branchtab[58]));
+        t275 = ((a1443)^(ao40short_Branchtab[26]));
+        a1579 = ((a1445)^(ao40short_Branchtab[58]));
         t276 = (t275 + a1579);
         t277 = (510 - t276);
         m369 = (X[26] + t276);
@@ -774,8 +794,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1529] = ((a1580)|(a1583));
         Y[52] = s182;
         Y[53] = s183;
-        t278 = ((a1443)^(Branchtab[27]));
-        a1584 = ((a1445)^(Branchtab[59]));
+        t278 = ((a1443)^(ao40short_Branchtab[27]));
+        a1584 = ((a1445)^(ao40short_Branchtab[59]));
         t279 = (t278 + a1584);
         t280 = (510 - t279);
         m373 = (X[27] + t279);
@@ -793,8 +813,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1529] = ((a1585)|(a1588));
         Y[54] = s184;
         Y[55] = s185;
-        t281 = ((a1443)^(Branchtab[28]));
-        a1589 = ((a1445)^(Branchtab[60]));
+        t281 = ((a1443)^(ao40short_Branchtab[28]));
+        a1589 = ((a1445)^(ao40short_Branchtab[60]));
         t282 = (t281 + a1589);
         t283 = (510 - t282);
         m377 = (X[28] + t282);
@@ -812,8 +832,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1529] = ((a1590)|(a1593));
         Y[56] = s186;
         Y[57] = s187;
-        t284 = ((a1443)^(Branchtab[29]));
-        a1594 = ((a1445)^(Branchtab[61]));
+        t284 = ((a1443)^(ao40short_Branchtab[29]));
+        a1594 = ((a1445)^(ao40short_Branchtab[61]));
         t285 = (t284 + a1594);
         t286 = (510 - t285);
         m381 = (X[29] + t285);
@@ -831,8 +851,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1529] = ((a1595)|(a1598));
         Y[58] = s188;
         Y[59] = s189;
-        t287 = ((a1443)^(Branchtab[30]));
-        a1599 = ((a1445)^(Branchtab[62]));
+        t287 = ((a1443)^(ao40short_Branchtab[30]));
+        a1599 = ((a1445)^(ao40short_Branchtab[62]));
         t288 = (t287 + a1599);
         t289 = (510 - t288);
         m385 = (X[30] + t288);
@@ -850,8 +870,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1529] = ((a1600)|(a1603));
         Y[60] = s190;
         Y[61] = s191;
-        t290 = ((a1443)^(Branchtab[31]));
-        a1604 = ((a1445)^(Branchtab[63]));
+        t290 = ((a1443)^(ao40short_Branchtab[31]));
+        a1604 = ((a1445)^(ao40short_Branchtab[63]));
         t291 = (t290 + a1604);
         t292 = (510 - t291);
         m390 = (X[31] + t291);
@@ -871,10 +891,10 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         Y[63] = s193;
         a1609 = (2 + a1442);
         a1610 = syms[a1609];
-        t293 = ((a1610)^(Branchtab[0]));
+        t293 = ((a1610)^(ao40short_Branchtab[0]));
         a1611 = (3 + a1442);
         a1612 = syms[a1611];
-        a1613 = ((a1612)^(Branchtab[32]));
+        a1613 = ((a1612)^(ao40short_Branchtab[32]));
         t294 = (t293 + a1613);
         t295 = (510 - t294);
         m394 = (Y[0] + t294);
@@ -894,8 +914,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1615] = ((a1616)|(a1619));
         X[0] = s194;
         X[1] = s195;
-        t296 = ((a1610)^(Branchtab[1]));
-        a1620 = ((a1612)^(Branchtab[33]));
+        t296 = ((a1610)^(ao40short_Branchtab[1]));
+        a1620 = ((a1612)^(ao40short_Branchtab[33]));
         t297 = (t296 + a1620);
         t298 = (510 - t297);
         m398 = (Y[1] + t297);
@@ -913,8 +933,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1615] = ((a1621)|(a1624));
         X[2] = s196;
         X[3] = s197;
-        t299 = ((a1610)^(Branchtab[2]));
-        a1625 = ((a1612)^(Branchtab[34]));
+        t299 = ((a1610)^(ao40short_Branchtab[2]));
+        a1625 = ((a1612)^(ao40short_Branchtab[34]));
         t300 = (t299 + a1625);
         t301 = (510 - t300);
         m402 = (Y[2] + t300);
@@ -932,8 +952,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1615] = ((a1626)|(a1629));
         X[4] = s198;
         X[5] = s199;
-        t302 = ((a1610)^(Branchtab[3]));
-        a1630 = ((a1612)^(Branchtab[35]));
+        t302 = ((a1610)^(ao40short_Branchtab[3]));
+        a1630 = ((a1612)^(ao40short_Branchtab[35]));
         t303 = (t302 + a1630);
         t304 = (510 - t303);
         m406 = (Y[3] + t303);
@@ -951,8 +971,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1615] = ((a1631)|(a1634));
         X[6] = s200;
         X[7] = s201;
-        t305 = ((a1610)^(Branchtab[4]));
-        a1635 = ((a1612)^(Branchtab[36]));
+        t305 = ((a1610)^(ao40short_Branchtab[4]));
+        a1635 = ((a1612)^(ao40short_Branchtab[36]));
         t306 = (t305 + a1635);
         t307 = (510 - t306);
         m410 = (Y[4] + t306);
@@ -970,8 +990,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1615] = ((a1636)|(a1639));
         X[8] = s202;
         X[9] = s203;
-        t308 = ((a1610)^(Branchtab[5]));
-        a1640 = ((a1612)^(Branchtab[37]));
+        t308 = ((a1610)^(ao40short_Branchtab[5]));
+        a1640 = ((a1612)^(ao40short_Branchtab[37]));
         t309 = (t308 + a1640);
         t310 = (510 - t309);
         m414 = (Y[5] + t309);
@@ -989,8 +1009,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1615] = ((a1641)|(a1644));
         X[10] = s204;
         X[11] = s205;
-        t311 = ((a1610)^(Branchtab[6]));
-        a1645 = ((a1612)^(Branchtab[38]));
+        t311 = ((a1610)^(ao40short_Branchtab[6]));
+        a1645 = ((a1612)^(ao40short_Branchtab[38]));
         t312 = (t311 + a1645);
         t313 = (510 - t312);
         m418 = (Y[6] + t312);
@@ -1008,8 +1028,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1615] = ((a1646)|(a1649));
         X[12] = s206;
         X[13] = s207;
-        t314 = ((a1610)^(Branchtab[7]));
-        a1650 = ((a1612)^(Branchtab[39]));
+        t314 = ((a1610)^(ao40short_Branchtab[7]));
+        a1650 = ((a1612)^(ao40short_Branchtab[39]));
         t315 = (t314 + a1650);
         t316 = (510 - t315);
         m422 = (Y[7] + t315);
@@ -1027,8 +1047,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1615] = ((a1651)|(a1654));
         X[14] = s208;
         X[15] = s209;
-        t317 = ((a1610)^(Branchtab[8]));
-        a1655 = ((a1612)^(Branchtab[40]));
+        t317 = ((a1610)^(ao40short_Branchtab[8]));
+        a1655 = ((a1612)^(ao40short_Branchtab[40]));
         t318 = (t317 + a1655);
         t319 = (510 - t318);
         m426 = (Y[8] + t318);
@@ -1046,8 +1066,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1615] = ((a1656)|(a1659));
         X[16] = s210;
         X[17] = s211;
-        t320 = ((a1610)^(Branchtab[9]));
-        a1660 = ((a1612)^(Branchtab[41]));
+        t320 = ((a1610)^(ao40short_Branchtab[9]));
+        a1660 = ((a1612)^(ao40short_Branchtab[41]));
         t321 = (t320 + a1660);
         t322 = (510 - t321);
         m430 = (Y[9] + t321);
@@ -1065,8 +1085,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1615] = ((a1661)|(a1664));
         X[18] = s212;
         X[19] = s213;
-        t323 = ((a1610)^(Branchtab[10]));
-        a1665 = ((a1612)^(Branchtab[42]));
+        t323 = ((a1610)^(ao40short_Branchtab[10]));
+        a1665 = ((a1612)^(ao40short_Branchtab[42]));
         t324 = (t323 + a1665);
         t325 = (510 - t324);
         m434 = (Y[10] + t324);
@@ -1084,8 +1104,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1615] = ((a1666)|(a1669));
         X[20] = s214;
         X[21] = s215;
-        t326 = ((a1610)^(Branchtab[11]));
-        a1670 = ((a1612)^(Branchtab[43]));
+        t326 = ((a1610)^(ao40short_Branchtab[11]));
+        a1670 = ((a1612)^(ao40short_Branchtab[43]));
         t327 = (t326 + a1670);
         t328 = (510 - t327);
         m438 = (Y[11] + t327);
@@ -1103,8 +1123,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1615] = ((a1671)|(a1674));
         X[22] = s216;
         X[23] = s217;
-        t329 = ((a1610)^(Branchtab[12]));
-        a1675 = ((a1612)^(Branchtab[44]));
+        t329 = ((a1610)^(ao40short_Branchtab[12]));
+        a1675 = ((a1612)^(ao40short_Branchtab[44]));
         t330 = (t329 + a1675);
         t331 = (510 - t330);
         m442 = (Y[12] + t330);
@@ -1122,8 +1142,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1615] = ((a1676)|(a1679));
         X[24] = s218;
         X[25] = s219;
-        t332 = ((a1610)^(Branchtab[13]));
-        a1680 = ((a1612)^(Branchtab[45]));
+        t332 = ((a1610)^(ao40short_Branchtab[13]));
+        a1680 = ((a1612)^(ao40short_Branchtab[45]));
         t333 = (t332 + a1680);
         t334 = (510 - t333);
         m446 = (Y[13] + t333);
@@ -1141,8 +1161,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1615] = ((a1681)|(a1684));
         X[26] = s220;
         X[27] = s221;
-        t335 = ((a1610)^(Branchtab[14]));
-        a1685 = ((a1612)^(Branchtab[46]));
+        t335 = ((a1610)^(ao40short_Branchtab[14]));
+        a1685 = ((a1612)^(ao40short_Branchtab[46]));
         t336 = (t335 + a1685);
         t337 = (510 - t336);
         m450 = (Y[14] + t336);
@@ -1160,8 +1180,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1615] = ((a1686)|(a1689));
         X[28] = s222;
         X[29] = s223;
-        t338 = ((a1610)^(Branchtab[15]));
-        a1690 = ((a1612)^(Branchtab[47]));
+        t338 = ((a1610)^(ao40short_Branchtab[15]));
+        a1690 = ((a1612)^(ao40short_Branchtab[47]));
         t339 = (t338 + a1690);
         t340 = (510 - t339);
         m454 = (Y[15] + t339);
@@ -1179,8 +1199,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1615] = ((a1691)|(a1694));
         X[30] = s224;
         X[31] = s225;
-        t341 = ((a1610)^(Branchtab[16]));
-        a1695 = ((a1612)^(Branchtab[48]));
+        t341 = ((a1610)^(ao40short_Branchtab[16]));
+        a1695 = ((a1612)^(ao40short_Branchtab[48]));
         t342 = (t341 + a1695);
         t343 = (510 - t342);
         m458 = (Y[16] + t342);
@@ -1199,8 +1219,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1696] = ((a1697)|(a1700));
         X[32] = s226;
         X[33] = s227;
-        t344 = ((a1610)^(Branchtab[17]));
-        a1701 = ((a1612)^(Branchtab[49]));
+        t344 = ((a1610)^(ao40short_Branchtab[17]));
+        a1701 = ((a1612)^(ao40short_Branchtab[49]));
         t345 = (t344 + a1701);
         t346 = (510 - t345);
         m462 = (Y[17] + t345);
@@ -1218,8 +1238,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1696] = ((a1702)|(a1705));
         X[34] = s228;
         X[35] = s229;
-        t347 = ((a1610)^(Branchtab[18]));
-        a1706 = ((a1612)^(Branchtab[50]));
+        t347 = ((a1610)^(ao40short_Branchtab[18]));
+        a1706 = ((a1612)^(ao40short_Branchtab[50]));
         t348 = (t347 + a1706);
         t349 = (510 - t348);
         m466 = (Y[18] + t348);
@@ -1237,8 +1257,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1696] = ((a1707)|(a1710));
         X[36] = s230;
         X[37] = s231;
-        t350 = ((a1610)^(Branchtab[19]));
-        a1711 = ((a1612)^(Branchtab[51]));
+        t350 = ((a1610)^(ao40short_Branchtab[19]));
+        a1711 = ((a1612)^(ao40short_Branchtab[51]));
         t351 = (t350 + a1711);
         t352 = (510 - t351);
         m470 = (Y[19] + t351);
@@ -1256,8 +1276,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1696] = ((a1712)|(a1715));
         X[38] = s232;
         X[39] = s233;
-        t353 = ((a1610)^(Branchtab[20]));
-        a1716 = ((a1612)^(Branchtab[52]));
+        t353 = ((a1610)^(ao40short_Branchtab[20]));
+        a1716 = ((a1612)^(ao40short_Branchtab[52]));
         t354 = (t353 + a1716);
         t355 = (510 - t354);
         m474 = (Y[20] + t354);
@@ -1275,8 +1295,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1696] = ((a1717)|(a1720));
         X[40] = s234;
         X[41] = s235;
-        t356 = ((a1610)^(Branchtab[21]));
-        a1721 = ((a1612)^(Branchtab[53]));
+        t356 = ((a1610)^(ao40short_Branchtab[21]));
+        a1721 = ((a1612)^(ao40short_Branchtab[53]));
         t357 = (t356 + a1721);
         t358 = (510 - t357);
         m478 = (Y[21] + t357);
@@ -1294,8 +1314,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1696] = ((a1722)|(a1725));
         X[42] = s236;
         X[43] = s237;
-        t359 = ((a1610)^(Branchtab[22]));
-        a1726 = ((a1612)^(Branchtab[54]));
+        t359 = ((a1610)^(ao40short_Branchtab[22]));
+        a1726 = ((a1612)^(ao40short_Branchtab[54]));
         t360 = (t359 + a1726);
         t361 = (510 - t360);
         m482 = (Y[22] + t360);
@@ -1313,8 +1333,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1696] = ((a1727)|(a1730));
         X[44] = s238;
         X[45] = s239;
-        t362 = ((a1610)^(Branchtab[23]));
-        a1731 = ((a1612)^(Branchtab[55]));
+        t362 = ((a1610)^(ao40short_Branchtab[23]));
+        a1731 = ((a1612)^(ao40short_Branchtab[55]));
         t363 = (t362 + a1731);
         t364 = (510 - t363);
         m486 = (Y[23] + t363);
@@ -1332,8 +1352,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1696] = ((a1732)|(a1735));
         X[46] = s240;
         X[47] = s241;
-        t365 = ((a1610)^(Branchtab[24]));
-        a1736 = ((a1612)^(Branchtab[56]));
+        t365 = ((a1610)^(ao40short_Branchtab[24]));
+        a1736 = ((a1612)^(ao40short_Branchtab[56]));
         t366 = (t365 + a1736);
         t367 = (510 - t366);
         m490 = (Y[24] + t366);
@@ -1351,8 +1371,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1696] = ((a1737)|(a1740));
         X[48] = s242;
         X[49] = s243;
-        t368 = ((a1610)^(Branchtab[25]));
-        a1741 = ((a1612)^(Branchtab[57]));
+        t368 = ((a1610)^(ao40short_Branchtab[25]));
+        a1741 = ((a1612)^(ao40short_Branchtab[57]));
         t369 = (t368 + a1741);
         t370 = (510 - t369);
         m494 = (Y[25] + t369);
@@ -1370,8 +1390,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1696] = ((a1742)|(a1745));
         X[50] = s244;
         X[51] = s245;
-        t371 = ((a1610)^(Branchtab[26]));
-        a1746 = ((a1612)^(Branchtab[58]));
+        t371 = ((a1610)^(ao40short_Branchtab[26]));
+        a1746 = ((a1612)^(ao40short_Branchtab[58]));
         t372 = (t371 + a1746);
         t373 = (510 - t372);
         m498 = (Y[26] + t372);
@@ -1389,8 +1409,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1696] = ((a1747)|(a1750));
         X[52] = s246;
         X[53] = s247;
-        t374 = ((a1610)^(Branchtab[27]));
-        a1751 = ((a1612)^(Branchtab[59]));
+        t374 = ((a1610)^(ao40short_Branchtab[27]));
+        a1751 = ((a1612)^(ao40short_Branchtab[59]));
         t375 = (t374 + a1751);
         t376 = (510 - t375);
         m502 = (Y[27] + t375);
@@ -1408,8 +1428,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1696] = ((a1752)|(a1755));
         X[54] = s248;
         X[55] = s249;
-        t377 = ((a1610)^(Branchtab[28]));
-        a1756 = ((a1612)^(Branchtab[60]));
+        t377 = ((a1610)^(ao40short_Branchtab[28]));
+        a1756 = ((a1612)^(ao40short_Branchtab[60]));
         t378 = (t377 + a1756);
         t379 = (510 - t378);
         m506 = (Y[28] + t378);
@@ -1427,8 +1447,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1696] = ((a1757)|(a1760));
         X[56] = s250;
         X[57] = s251;
-        t380 = ((a1610)^(Branchtab[29]));
-        a1761 = ((a1612)^(Branchtab[61]));
+        t380 = ((a1610)^(ao40short_Branchtab[29]));
+        a1761 = ((a1612)^(ao40short_Branchtab[61]));
         t381 = (t380 + a1761);
         t382 = (510 - t381);
         m510 = (Y[29] + t381);
@@ -1446,8 +1466,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1696] = ((a1762)|(a1765));
         X[58] = s252;
         X[59] = s253;
-        t383 = ((a1610)^(Branchtab[30]));
-        a1766 = ((a1612)^(Branchtab[62]));
+        t383 = ((a1610)^(ao40short_Branchtab[30]));
+        a1766 = ((a1612)^(ao40short_Branchtab[62]));
         t384 = (t383 + a1766);
         t385 = (510 - t384);
         m514 = (Y[30] + t384);
@@ -1465,8 +1485,8 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
         dec[a1696] = ((a1767)|(a1770));
         X[60] = s254;
         X[61] = s255;
-        t387 = ((a1610)^(Branchtab[31]));
-        a1771 = ((a1612)^(Branchtab[63]));
+        t387 = ((a1610)^(ao40short_Branchtab[31]));
+        a1771 = ((a1612)^(ao40short_Branchtab[63]));
         t388 = (t387 + a1771);
         t389 = (510 - t388);
         m518 = (Y[31] + t388);
@@ -1488,20 +1508,20 @@ void FULL_SPIRAL(unsigned int  *Y, unsigned int  *X, unsigned int  *syms, unsign
     /* skip */
 }
 
-int update_viterbi_blk(void *p, COMPUTETYPE *syms,int nbits){
-  struct v *vp = p;
+int ao40short_update_viterbi_blk(void *p, AO40SHORT_COMPUTETYPE *syms,int nbits){
+  struct ao40short_v *vp = p;
 
-  decision_t *d;
+  ao40short_decision_t *d;
   int s;
 
   if(p == NULL)
     return -1;
-  d = (decision_t *)vp->decisions;
+  d = (ao40short_decision_t *)vp->decisions;
 
   for (s=0;s<nbits;s++)
-    memset(d+s,0,sizeof(decision_t));
+    memset(d+s,0,sizeof(ao40short_decision_t));
 
-  FULL_SPIRAL( vp->new_metrics->t, vp->old_metrics->t, syms, d->t, Branchtab);
+  AO40SHORT_FULL_SPIRAL( vp->new_metrics->t, vp->old_metrics->t, syms, d->t, ao40short_Branchtab);
 
   return 0;
 }

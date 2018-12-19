@@ -18,48 +18,46 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ******************************************************************/
 
-#ifndef SPIRAL_VIT_SCALAR_1280_H
-#define SPIRAL_VIT_SCALAR_1280_H
+#ifndef AO40SHORT_SPIRAL_VIT_SCALAR_1280_H
+#define AO40SHORT_SPIRAL_VIT_SCALAR_1280_H
 
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define K 7
-#define RATE 2
-#define POLYS { 79, -109 }
-#define NUMSTATES 64
-#define FRAMEBITS 1280
-#define DECISIONTYPE uint32_t
-#define DECISIONTYPE_BITSIZE 32
-#define COMPUTETYPE uint32_t
+#define AO40SHORT_K 7
+#define AO40SHORT_RATE 2
+#define AO40SHORT_POLYS { 79, -109 }
+#define AO40SHORT_NUMSTATES 64
+#define AO40SHORT_FRAMEBITS 1280
+#define AO40SHORT_DECISIONTYPE uint32_t
+#define AO40SHORT_DECISIONTYPE_BITSIZE 32
+#define AO40SHORT_COMPUTETYPE uint32_t
 
-extern int posix_memalign(void **memptr, size_t alignment, size_t size);
-
-//decision_t is a BIT vector
+//ao40short_decision_t is a BIT vector
 typedef union {
-  DECISIONTYPE t[NUMSTATES/DECISIONTYPE_BITSIZE];
-  uint32_t w[NUMSTATES/32];
-  unsigned short s[NUMSTATES/16];
-  unsigned char c[NUMSTATES/8];
-} decision_t __attribute__ ((aligned (16)));
+  AO40SHORT_DECISIONTYPE t[AO40SHORT_NUMSTATES/AO40SHORT_DECISIONTYPE_BITSIZE];
+  uint32_t w[AO40SHORT_NUMSTATES/32];
+  unsigned short s[AO40SHORT_NUMSTATES/16];
+  unsigned char c[AO40SHORT_NUMSTATES/8];
+} ao40short_decision_t __attribute__ ((aligned (16)));
 
 typedef union {
-  COMPUTETYPE t[NUMSTATES];
-} metric_t __attribute__ ((aligned (16)));
+  AO40SHORT_COMPUTETYPE t[AO40SHORT_NUMSTATES];
+} ao40short_metric_t __attribute__ ((aligned (16)));
 
 /* State info for instance of Viterbi decoder */
-struct v {
-  __attribute__ ((aligned (16))) metric_t metrics1; /* path metric buffer 1 */
-  __attribute__ ((aligned (16))) metric_t metrics2; /* path metric buffer 2 */
-  metric_t *old_metrics,*new_metrics; /* Pointers to path metrics, swapped on every bit */
-  decision_t *decisions;   /* decisions */
+struct ao40short_v {
+  __attribute__ ((aligned (16))) ao40short_metric_t metrics1; /* path metric buffer 1 */
+  __attribute__ ((aligned (16))) ao40short_metric_t metrics2; /* path metric buffer 2 */
+  ao40short_metric_t *old_metrics,*new_metrics; /* Pointers to path metrics, swapped on every bit */
+  ao40short_decision_t *decisions;   /* decisions */
 };
 
-COMPUTETYPE Branchtab[NUMSTATES/2*RATE] __attribute__ ((aligned (16)));
+extern AO40SHORT_COMPUTETYPE ao40short_Branchtab[AO40SHORT_NUMSTATES/2*AO40SHORT_RATE] __attribute__ ((aligned (16)));
 
-static const uint8_t Partab[256] = {
+static const uint8_t ao40short_Partab[256] = {
   0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x01, 0x00, 
   0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x01, 
   0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x01, 
@@ -78,17 +76,17 @@ static const uint8_t Partab[256] = {
   0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x01, 0x00
 };
 
-static inline int parity(uint32_t x){
+static inline int ao40short_parity(uint32_t x){
   /* Fold down to one byte */
   x ^= (x >> 16);
   x ^= (x >> 8);
-  return Partab[x];
+  return ao40short_Partab[x];
 }
 
-int init_viterbi(void *p, int starting_state);
-void *create_viterbi(int len);
-int chainback_viterbi(void *p, uint8_t *data, uint32_t nbits, uint32_t endstate);
-void delete_viterbi(void *p);
-int update_viterbi_blk(void *p, COMPUTETYPE *syms, int nbits);
+int ao40short_init_viterbi(void *p, int starting_state);
+void *ao40short_create_viterbi(int len);
+int ao40short_chainback_viterbi(void *p, uint8_t *data, uint32_t nbits, uint32_t endstate);
+void ao40short_delete_viterbi(void *p);
+int ao40short_update_viterbi_blk(void *p, AO40SHORT_COMPUTETYPE *syms, int nbits);
 
 #endif

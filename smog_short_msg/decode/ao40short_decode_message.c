@@ -11,9 +11,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include "dec_short_msg.h"
+#include "ao40short_decode_message.h"
 
-const uint8_t Scrambler[320] = {
+const uint8_t ao40short_Scrambler[320] = {
   0xff, 0x48, 0x0e, 0xc0, 0x9a, 0x0d, 0x70, 0xbc, 0x8e, 0x2c, 0x93, 0xad, 0xa7, 0xb7, 0x46, 0xce,
   0x5a, 0x97, 0x7d, 0xcc, 0x32, 0xa2, 0xbf, 0x3e, 0x0a, 0x10, 0xf1, 0x88, 0x94, 0xcd, 0xea, 0xb1,
   0xfe, 0x90, 0x1d, 0x81, 0x34, 0x1a, 0xe1, 0x79, 0x1c, 0x59, 0x27, 0x5b, 0x4f, 0x6e, 0x8d, 0x9c,
@@ -36,102 +36,102 @@ const uint8_t Scrambler[320] = {
   0x2e, 0xfb, 0x98, 0x65, 0x45, 0x7e, 0x7c, 0x14, 0x21, 0xe3, 0x11, 0x29, 0x9b, 0xd5, 0x63, 0xfd,
 };
 
-/* Deinterleave data: 
- * 
- * - The bits of every interleaved byte is spread with 80 bit distance of each 
+/* Deinterleave data:
+ *
+ * - The bits of every interleaved byte is spread with 80 bit distance of each
  *   other. This function reorder these bits to be neighboring again.
  * - The first interleaved column (65 byte) is the SYNC_POLY (0x48), ommit it (thus i=1).
  * - The CCSDS standard using CONV_POLY_B (0x6d) in inverted format, but
- *   viterbi decoder assumes non-inverted bits, so invert every second bit 
+ *   ao40short_viterbi decoder assumes non-inverted bits, so invert every second bit
  *   by hand.
  */
-void deinterleave(uint8_t raw[RAW_SIZE], uint8_t conv[CONV_SIZE]) {
+void ao40short_deinterleave(uint8_t raw[AO40SHORT_RAW_SIZE], uint8_t conv[AO40SHORT_CONV_SIZE]) {
   uint16_t i = 0;
   uint16_t j = 0;
-  uint16_t counter = 0; 
+  uint16_t counter = 0;
 
-  while (counter < RAW_SIZE) {
-    if (i >= RAW_SIZE) {
-      i -= (RAW_SIZE - 1);
+  while (counter < AO40SHORT_RAW_SIZE) {
+    if (i >= AO40SHORT_RAW_SIZE) {
+      i -= (AO40SHORT_RAW_SIZE - 1);
     }
-    if (++counter > INTERLEAVER_PILOT_BITS) {
+    if (++counter > AO40SHORT_INTERLEAVER_PILOT_BITS) {
       conv[j++] = raw[i];
       // printf("%4d: %4d -> %02x [INTER]\n", counter, j, conv[j-1]);
     } else {
       // printf("%4d: %4d -> %02x [PILOT]\n", counter, i, raw[i]);
     }
-    i += INTERLEAVER_STEP_SIZE;
+    i += AO40SHORT_INTERLEAVER_STEP_SIZE;
   }
 }
 
 /* Viterbi decoder:
  *   It uses the one generated from http://www.spiral.net/
  */
-void viterbi(uint8_t conv[CONV_SIZE], uint8_t dec_data[RS_SIZE]) {
-  struct v *vp;
-  COMPUTETYPE conv_compute[CONV_SIZE];
+void ao40short_viterbi(uint8_t conv[AO40SHORT_CONV_SIZE], uint8_t dec_data[AO40SHORT_RS_SIZE]) {
+  struct ao40short_v *vp;
+  AO40SHORT_COMPUTETYPE conv_compute[AO40SHORT_CONV_SIZE];
   int i;
 
-  if((vp = create_viterbi(FRAMEBITS)) == NULL){
-    printf("create_viterbi failed\n");
+  if((vp = ao40short_create_viterbi(AO40SHORT_FRAMEBITS)) == AO40SHORT_NULL){
+    printf("ao40short_create_viterbi failed\n");
     exit(1);
   }
 
-  init_viterbi(vp, 0);
+  ao40short_init_viterbi(vp, 0);
 
-  // COMPUTETYPE is set to uint32, so convert uint8 to uint32
+  // AO40SHORT_COMPUTETYPE is set to uint32, so convert uint8 to uint32
   // but the softbit value should be between 0 and 255 (!)
-  i = CONV_SIZE;
+  i = AO40SHORT_CONV_SIZE;
   while (i--) {
     conv_compute[i] = conv[i];
   }
 
-  update_viterbi_blk(vp, conv_compute, FRAMEBITS+(K-1));
-  chainback_viterbi(vp, dec_data, FRAMEBITS, 0);
+  ao40short_update_viterbi_blk(vp, conv_compute, AO40SHORT_FRAMEBITS+(AO40SHORT_K-1));
+  ao40short_chainback_viterbi(vp, dec_data, AO40SHORT_FRAMEBITS, 0);
 
-  delete_viterbi(vp);
+  ao40short_delete_viterbi(vp);
 }
 
-void descramble(uint8_t dec_data[RS_SIZE], uint8_t rs[RS_BLOCK_SIZE]) {
+void ao40short_descramble(uint8_t dec_data[AO40SHORT_RS_SIZE], uint8_t rs[AO40SHORT_RS_BLOCK_SIZE]) {
   uint16_t i;
 
-  for (i = 0; i < RS_BLOCK_SIZE; ++i) {
-    rs[i] = dec_data[i] ^ Scrambler[i];
+  for (i = 0; i < AO40SHORT_RS_BLOCK_SIZE; ++i) {
+    rs[i] = dec_data[i] ^ ao40short_Scrambler[i];
   }
 }
 
-void rs_decode(uint8_t rs[RS_BLOCK_SIZE], uint8_t data[DATA_SIZE], int8_t *error) {
+void ao40short_rs_decode(uint8_t rs[AO40SHORT_RS_BLOCK_SIZE], uint8_t data[AO40SHORT_DATA_SIZE], int8_t *error) {
   uint16_t i;
 
-  *error = decode_rs_8(rs, NULL, 0);
+  *error = ao40short_decode_rs_8(rs, AO40SHORT_NULL, 0);
 
   // use 'memcpy' instead!
-  for (i = 0; i < DATA_SIZE; ++i) {
+  for (i = 0; i < AO40SHORT_DATA_SIZE; ++i) {
     data[i] = rs[i];
   }
 }
 
-void decode_data(uint8_t raw[RAW_SIZE], uint8_t data[DATA_SIZE], int8_t *error) {
-  uint8_t conv[CONV_SIZE];
-  uint8_t dec_data[RS_SIZE];
-  uint8_t rs[RS_BLOCK_SIZE];
+void ao40short_decode_data(uint8_t raw[AO40SHORT_RAW_SIZE], uint8_t data[AO40SHORT_DATA_SIZE], int8_t *error) {
+  uint8_t conv[AO40SHORT_CONV_SIZE];
+  uint8_t dec_data[AO40SHORT_RS_SIZE];
+  uint8_t rs[AO40SHORT_RS_BLOCK_SIZE];
 
-  deinterleave(raw, conv);
-  viterbi(conv, dec_data);
-  descramble(dec_data, rs);
-  rs_decode(rs, data, error);
+  ao40short_deinterleave(raw, conv);
+  ao40short_viterbi(conv, dec_data);
+  ao40short_descramble(dec_data, rs);
+  ao40short_rs_decode(rs, data, error);
 }
 
-void decode_data_debug(
-    uint8_t raw[RAW_SIZE],        // Data to be decoded
-    uint8_t data[DATA_SIZE],      // Decoded data
+void ao40short_decode_data_debug(
+    uint8_t raw[AO40SHORT_RAW_SIZE],        // Data to be decoded
+    uint8_t data[AO40SHORT_DATA_SIZE],      // Decoded data
     int8_t  *error,               // RS decoder modules corrected errors or -1 if unrecoverable error happened
-    uint8_t conv[CONV_SIZE],      // Deinterleaved data with SYNC removed
-    uint8_t dec_data[RS_SIZE],    // Viterbi decoder output
-    uint8_t rs[RS_BLOCK_SIZE]     // RS codeblocks without the leading padding 95 zeros
+    uint8_t conv[AO40SHORT_CONV_SIZE],      // Deinterleaved data with SYNC removed
+    uint8_t dec_data[AO40SHORT_RS_SIZE],    // Viterbi decoder output
+    uint8_t rs[AO40SHORT_RS_BLOCK_SIZE]     // RS codeblocks without the leading padding 95 zeros
   ) {
-  deinterleave(raw, conv);
-  viterbi(conv, dec_data);
-  descramble(dec_data, rs);
-  rs_decode(rs, data, error);
+  ao40short_deinterleave(raw, conv);
+  ao40short_viterbi(conv, dec_data);
+  ao40short_descramble(dec_data, rs);
+  ao40short_rs_decode(rs, data, error);
 }
