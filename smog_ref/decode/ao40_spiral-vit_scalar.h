@@ -1,60 +1,58 @@
-#ifndef SPIRAL_VIT_SCALAR_H
-#define SPIRAL_VIT_SCALAR_H
+#ifndef AO40_SPIRAL_VIT_SCALAR_H
+#define AO40_SPIRAL_VIT_SCALAR_H
 
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define K 7
-#define RATE 2
-#define POLYS { 79, -109 }
-#define NUMSTATES 64
-#define FRAMEBITS 2560
-#define DECISIONTYPE uint32_t
-#define DECISIONTYPE_BITSIZE 32
-#define COMPUTETYPE uint32_t
-#define COMPUTETYPE_BITSIZE 32
+#define AO40_K 7
+#define AO40_RATE 2
+#define AO40_POLYS { 79, -109 }
+#define AO40_NUMSTATES 64
+#define AO40_FRAMEBITS 2560
+#define AO40_DECISIONTYPE uint32_t
+#define AO40_DECISIONTYPE_BITSIZE 32
+#define AO40_COMPUTETYPE uint32_t
+#define AO40_COMPUTETYPE_BITSIZE 32
 
-extern int posix_memalign(void **memptr, size_t alignment, size_t size);
-
-//decision_t is a BIT vector
+//ao40_decision_t is a BIT vector
 typedef union {
-  DECISIONTYPE t[NUMSTATES/DECISIONTYPE_BITSIZE];
-  uint32_t w[NUMSTATES/32];
-  unsigned short s[NUMSTATES/16];
-  unsigned char c[NUMSTATES/8];
-} decision_t __attribute__ ((aligned (16)));
+  AO40_DECISIONTYPE t[AO40_NUMSTATES/AO40_DECISIONTYPE_BITSIZE];
+  uint32_t w[AO40_NUMSTATES/32];
+  unsigned short s[AO40_NUMSTATES/16];
+  unsigned char c[AO40_NUMSTATES/8];
+} ao40_decision_t __attribute__ ((aligned (16)));
 
 typedef union {
-  COMPUTETYPE t[NUMSTATES];
-} metric_t __attribute__ ((aligned (16)));
+  AO40_COMPUTETYPE t[AO40_NUMSTATES];
+} ao40_metric_t __attribute__ ((aligned (16)));
 
-inline void renormalize(COMPUTETYPE* X, COMPUTETYPE threshold) {
+inline void ao40_renormalize(AO40_COMPUTETYPE* X, AO40_COMPUTETYPE threshold) {
   int i;
   if ( X[0] > threshold ) {
-    COMPUTETYPE min = X[0];
-    for (i = 0; i < NUMSTATES; ++i) {
+    AO40_COMPUTETYPE min = X[0];
+    for (i = 0; i < AO40_NUMSTATES; ++i) {
       if (min > X[i])
         min = X[i];
     }
-    for (i = 0; i < NUMSTATES; ++i) {
+    for (i = 0; i < AO40_NUMSTATES; ++i) {
       X[i]-=min;
     }
   }
 }
 
 /* State info for instance of Viterbi decoder */
-struct v {
-  __attribute__ ((aligned (16))) metric_t metrics1; /* path metric buffer 1 */
-  __attribute__ ((aligned (16))) metric_t metrics2; /* path metric buffer 2 */
-  metric_t *old_metrics,*new_metrics; /* Pointers to path metrics, swapped on every bit */
-  decision_t *decisions;   /* decisions */
+struct ao40_v {
+  __attribute__ ((aligned (16))) ao40_metric_t metrics1; /* path metric buffer 1 */
+  __attribute__ ((aligned (16))) ao40_metric_t metrics2; /* path metric buffer 2 */
+  ao40_metric_t *old_metrics,*new_metrics; /* Pointers to path metrics, swapped on every bit */
+  ao40_decision_t *decisions;   /* decisions */
 };
 
-COMPUTETYPE Branchtab[NUMSTATES/2*RATE] __attribute__ ((aligned (16)));
+extern AO40_COMPUTETYPE ao40_Branchtab[AO40_NUMSTATES/2*AO40_RATE] __attribute__ ((aligned (16)));
 
-static const uint8_t Partab[256] = {
+static const uint8_t ao40_Partab[256] = {
   0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x01, 0x00, 
   0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x01, 
   0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x01, 
@@ -73,17 +71,17 @@ static const uint8_t Partab[256] = {
   0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x01, 0x00
 };
 
-static inline int parity(uint32_t x){
+static inline int ao40_parity(uint32_t x){
   /* Fold down to one byte */
   x ^= (x >> 16);
   x ^= (x >> 8);
-  return Partab[x];
+  return ao40_Partab[x];
 }
 
-int init_viterbi(void *p, int starting_state);
-void *create_viterbi(int len);
-int chainback_viterbi(void *p, uint8_t *data, uint32_t nbits, uint32_t endstate);
-void delete_viterbi(void *p);
-int update_viterbi_blk(void *p, COMPUTETYPE *syms, int nbits);
+int ao40_init_viterbi(void *p, int starting_state);
+void *ao40_create_viterbi(int len);
+int ao40_chainback_viterbi(void *p, uint8_t *data, uint32_t nbits, uint32_t endstate);
+void ao40_delete_viterbi(void *p);
+int ao40_update_viterbi_blk(void *p, AO40_COMPUTETYPE *syms, int nbits);
 
-#endif /* SPIRAL_VIT_SCALAR_H */
+#endif /* AO40_SPIRAL_VIT_SCALAR_H */

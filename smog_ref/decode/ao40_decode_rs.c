@@ -1,42 +1,42 @@
-#include "decode_rs.h"
+#include "ao40_decode_rs.h"
 
 #include <stdint.h>
 #include <string.h>
 
-#if !defined(NROOTS)
-#error "NROOTS not defined"
+#if !defined(AO40_NROOTS)
+#error "AO40_NROOTS not defined"
 #endif
 
-#if !defined(NN)
-#error "NN not defined"
+#if !defined(AO40_NN)
+#error "AO40_NN not defined"
 #endif
 
-#if !defined(PAD)
-#error "PAD not defined"
+#if !defined(AO40_PAD)
+#error "AO40_PAD not defined"
 #endif
 
-#if !defined(MODNN)
-#error "MODNN not defined"
+#if !defined(AO40_MODNN)
+#error "AO40_MODNN not defined"
 #endif
 
-#if !defined(FCR)
-#error "FCR not defined"
+#if !defined(AO40_FCR)
+#error "AO40_FCR not defined"
 #endif
 
-#if !defined(PRIM)
-#error "PRIM not defined"
+#if !defined(AO40_PRIM)
+#error "AO40_PRIM not defined"
 #endif
 
-#if !defined(NULL)
-#define NULL ((void *)0)
+#if !defined(AO40_NULL)
+#define AO40_NULL ((void *)0)
 #endif
 
-#undef MIN
-#define MIN(a,b) ((a) < (b) ? (a) : (b))
-#undef A0
-#define A0 (NN)
+#undef AO40_MIN
+#define AO40_MIN(a,b) ((a) < (b) ? (a) : (b))
+#undef AO40_A0
+#define AO40_A0 (AO40_NN)
 
-const uint8_t INDEX_OF[] = {
+const uint8_t AO40_INDEX_OF[] = {
    0xff, 0x00, 0x01, 0x63, 0x02, 0xc6, 0x64, 0x6a, 0x03, 0xcd, 0xc7, 0xbc, 0x65, 0x7e, 0x6b, 0x2a,
    0x04, 0x8d, 0xce, 0x4e, 0xc8, 0xd4, 0xbd, 0xe1, 0x66, 0xdd, 0x7f, 0x31, 0x6c, 0x20, 0x2b, 0xf3,
    0x05, 0x57, 0x8e, 0xe8, 0xcf, 0xac, 0x4f, 0x83, 0xc9, 0xd9, 0xd5, 0x41, 0xbe, 0x94, 0xe2, 0xb4,
@@ -55,7 +55,7 @@ const uint8_t INDEX_OF[] = {
    0x2e, 0x4b, 0xb9, 0x60, 0x0f, 0xed, 0x3e, 0xe5, 0xf6, 0x87, 0xa5, 0x17, 0x3a, 0xa3, 0x3c, 0xb7,
 };
 
-const uint8_t ALPHA_TO[] = {
+const uint8_t AO40_ALPHA_TO[] = {
     0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x87, 0x89, 0x95, 0xad, 0xdd, 0x3d, 0x7a, 0xf4,
     0x6f, 0xde, 0x3b, 0x76, 0xec, 0x5f, 0xbe, 0xfb, 0x71, 0xe2, 0x43, 0x86, 0x8b, 0x91, 0xa5, 0xcd,
     0x1d, 0x3a, 0x74, 0xe8, 0x57, 0xae, 0xdb, 0x31, 0x62, 0xc4, 0x0f, 0x1e, 0x3c, 0x78, 0xf0, 0x67,
@@ -74,34 +74,34 @@ const uint8_t ALPHA_TO[] = {
     0x33, 0x66, 0xcc, 0x1f, 0x3e, 0x7c, 0xf8, 0x77, 0xee, 0x5b, 0xb6, 0xeb, 0x51, 0xa2, 0xc3, 0x00,
 };
 
-int8_t decode_rs_8(uint8_t *data, int *eras_pos, int no_eras) {
+int8_t ao40_decode_rs_8(uint8_t *data, int *eras_pos, int no_eras) {
   int deg_lambda, el, deg_omega;
   int i, j, r,k;
   uint8_t u,q,tmp,num1,num2,den,discr_r;
-  uint8_t lambda[NROOTS+1], s[NROOTS];        /* Err+Eras Locator poly and syndrome poly */
-  uint8_t b[NROOTS+1], t[NROOTS+1], omega[NROOTS+1];
-  uint8_t root[NROOTS], reg[NROOTS+1], loc[NROOTS];
+  uint8_t lambda[AO40_NROOTS+1], s[AO40_NROOTS];        /* Err+Eras Locator poly and syndrome poly */
+  uint8_t b[AO40_NROOTS+1], t[AO40_NROOTS+1], omega[AO40_NROOTS+1];
+  uint8_t root[AO40_NROOTS], reg[AO40_NROOTS+1], loc[AO40_NROOTS];
   int syn_error, count;
 
   /* form the syndromes; i.e., evaluate data(x) at roots of g(x) */
-  for (i=0;i<NROOTS;i++)
+  for (i=0;i<AO40_NROOTS;i++)
     s[i] = data[0];
 
-  for (j=1;j<NN-PAD;j++) {
-    for (i=0;i<NROOTS;i++) {
+  for (j=1;j<AO40_NN-AO40_PAD;j++) {
+    for (i=0;i<AO40_NROOTS;i++) {
       if (s[i] == 0) {
         s[i] = data[j];
       } else {
-        s[i] = data[j] ^ ALPHA_TO[MODNN(INDEX_OF[s[i]] + (FCR+i)*PRIM)];
+        s[i] = data[j] ^ AO40_ALPHA_TO[AO40_MODNN(AO40_INDEX_OF[s[i]] + (AO40_FCR+i)*AO40_PRIM)];
       }
     }
   }
 
   /* Convert syndromes to index form, checking for nonzero condition */
   syn_error = 0;
-  for (i=0;i<NROOTS;i++) {
+  for (i=0;i<AO40_NROOTS;i++) {
     syn_error |= s[i];
-    s[i] = INDEX_OF[s[i]];
+    s[i] = AO40_INDEX_OF[s[i]];
   }
 
   if (!syn_error) {
@@ -111,18 +111,18 @@ int8_t decode_rs_8(uint8_t *data, int *eras_pos, int no_eras) {
     count = 0;
     goto finish;
   }
-  memset(&lambda[1],0,NROOTS*sizeof(lambda[0]));
+  memset(&lambda[1],0,AO40_NROOTS*sizeof(lambda[0]));
   lambda[0] = 1;
 
   if (no_eras > 0) {
     /* Init lambda to be the erasure locator polynomial */
-    lambda[1] = ALPHA_TO[MODNN(PRIM*(NN-1-eras_pos[0]))];
+    lambda[1] = AO40_ALPHA_TO[AO40_MODNN(AO40_PRIM*(AO40_NN-1-eras_pos[0]))];
     for (i = 1; i < no_eras; i++) {
-      u = MODNN(PRIM*(NN-1-eras_pos[i]));
+      u = AO40_MODNN(AO40_PRIM*(AO40_NN-1-eras_pos[i]));
       for (j = i+1; j > 0; j--) {
-        tmp = INDEX_OF[lambda[j - 1]];
-        if (tmp != A0)
-          lambda[j] ^= ALPHA_TO[MODNN(u + tmp)];
+        tmp = AO40_INDEX_OF[lambda[j - 1]];
+        if (tmp != AO40_A0)
+          lambda[j] ^= AO40_ALPHA_TO[AO40_MODNN(u + tmp)];
       }
     }
 
@@ -132,15 +132,15 @@ int8_t decode_rs_8(uint8_t *data, int *eras_pos, int no_eras) {
     
     /* find roots of the erasure location polynomial */
     for (i=1;i<=no_eras;i++)
-      reg[i] = INDEX_OF[lambda[i]];
+      reg[i] = AO40_INDEX_OF[lambda[i]];
 
     count = 0;
-    for (i = 1,k=IPRIM-1; i <= NN; i++,k = MODNN(k+IPRIM)) {
+    for (i = 1,k=AO40_IPRIM-1; i <= AO40_NN; i++,k = AO40_MODNN(k+AO40_IPRIM)) {
       q = 1;
       for (j = 1; j <= no_eras; j++)
-        if (reg[j] != A0) {
-          reg[j] = MODNN(reg[j] + j);
-          q ^= ALPHA_TO[reg[j]];
+        if (reg[j] != AO40_A0) {
+          reg[j] = AO40_MODNN(reg[j] + j);
+          q ^= AO40_ALPHA_TO[reg[j]];
         }
       if (q != 0)
         continue;
@@ -162,8 +162,8 @@ int8_t decode_rs_8(uint8_t *data, int *eras_pos, int no_eras) {
 #endif
 #endif
   }
-  for (i=0;i<NROOTS+1;i++)
-    b[i] = INDEX_OF[lambda[i]];
+  for (i=0;i<AO40_NROOTS+1;i++)
+    b[i] = AO40_INDEX_OF[lambda[i]];
   
   /*
    * Begin Berlekamp-Massey algorithm to determine error+erasure
@@ -171,25 +171,25 @@ int8_t decode_rs_8(uint8_t *data, int *eras_pos, int no_eras) {
    */
   r = no_eras;
   el = no_eras;
-  while (++r <= NROOTS) {        /* r is the step number */
+  while (++r <= AO40_NROOTS) {        /* r is the step number */
     /* Compute discrepancy at the r-th step in poly-form */
     discr_r = 0;
     for (i = 0; i < r; i++) {
-      if ((lambda[i] != 0) && (s[r-i-1] != A0)) {
-        discr_r ^= ALPHA_TO[MODNN(INDEX_OF[lambda[i]] + s[r-i-1])];
+      if ((lambda[i] != 0) && (s[r-i-1] != AO40_A0)) {
+        discr_r ^= AO40_ALPHA_TO[AO40_MODNN(AO40_INDEX_OF[lambda[i]] + s[r-i-1])];
       }
     }
-    discr_r = INDEX_OF[discr_r];        /* Index form */
-    if (discr_r == A0) {
+    discr_r = AO40_INDEX_OF[discr_r];        /* Index form */
+    if (discr_r == AO40_A0) {
       /* 2 lines below: B(x) <-- x*B(x) */
-      memmove(&b[1],b,NROOTS*sizeof(b[0]));
-      b[0] = A0;
+      memmove(&b[1],b,AO40_NROOTS*sizeof(b[0]));
+      b[0] = AO40_A0;
     } else {
       /* 7 lines below: T(x) <-- lambda(x) - discr_r*x*b(x) */
       t[0] = lambda[0];
-      for (i = 0 ; i < NROOTS; i++) {
-        if (b[i] != A0)
-          t[i+1] = lambda[i+1] ^ ALPHA_TO[MODNN(discr_r + b[i])];
+      for (i = 0 ; i < AO40_NROOTS; i++) {
+        if (b[i] != AO40_A0)
+          t[i+1] = lambda[i+1] ^ AO40_ALPHA_TO[AO40_MODNN(discr_r + b[i])];
         else
           t[i+1] = lambda[i+1];
       }
@@ -199,33 +199,33 @@ int8_t decode_rs_8(uint8_t *data, int *eras_pos, int no_eras) {
          * 2 lines below: B(x) <-- inv(discr_r) *
          * lambda(x)
          */
-        for (i = 0; i <= NROOTS; i++)
-          b[i] = (lambda[i] == 0) ? A0 : MODNN(INDEX_OF[lambda[i]] - discr_r + NN);
+        for (i = 0; i <= AO40_NROOTS; i++)
+          b[i] = (lambda[i] == 0) ? AO40_A0 : AO40_MODNN(AO40_INDEX_OF[lambda[i]] - discr_r + AO40_NN);
       } else {
         /* 2 lines below: B(x) <-- x*B(x) */
-        memmove(&b[1],b,NROOTS*sizeof(b[0]));
-        b[0] = A0;
+        memmove(&b[1],b,AO40_NROOTS*sizeof(b[0]));
+        b[0] = AO40_A0;
       }
-      memcpy(lambda,t,(NROOTS+1)*sizeof(t[0]));
+      memcpy(lambda,t,(AO40_NROOTS+1)*sizeof(t[0]));
     }
   }
 
   /* Convert lambda to index form and compute deg(lambda(x)) */
   deg_lambda = 0;
-  for (i=0;i<NROOTS+1;i++) {
-    lambda[i] = INDEX_OF[lambda[i]];
-    if (lambda[i] != A0)
+  for (i=0;i<AO40_NROOTS+1;i++) {
+    lambda[i] = AO40_INDEX_OF[lambda[i]];
+    if (lambda[i] != AO40_A0)
       deg_lambda = i;
   }
   /* Find roots of the error+erasure locator polynomial by Chien search */
-  memcpy(&reg[1],&lambda[1],NROOTS*sizeof(reg[0]));
+  memcpy(&reg[1],&lambda[1],AO40_NROOTS*sizeof(reg[0]));
   count = 0;                /* Number of roots of lambda(x) */
-  for (i = 1,k=IPRIM-1; i <= NN; i++,k = MODNN(k+IPRIM)) {
+  for (i = 1,k=AO40_IPRIM-1; i <= AO40_NN; i++,k = AO40_MODNN(k+AO40_IPRIM)) {
     q = 1; /* lambda[0] is always 0 */
     for (j = deg_lambda; j > 0; j--) {
-      if (reg[j] != A0) {
-        reg[j] = MODNN(reg[j] + j);
-        q ^= ALPHA_TO[reg[j]];
+      if (reg[j] != AO40_A0) {
+        reg[j] = AO40_MODNN(reg[j] + j);
+        q ^= AO40_ALPHA_TO[reg[j]];
       }
     }
     if (q != 0)
@@ -255,35 +255,35 @@ int8_t decode_rs_8(uint8_t *data, int *eras_pos, int no_eras) {
   }
   /*
    * Compute err+eras evaluator poly omega(x) = s(x)*lambda(x) (modulo
-   * x**NROOTS). in index form. Also find deg(omega).
+   * x**AO40_NROOTS). in index form. Also find deg(omega).
    */
   deg_omega = deg_lambda-1;
   for (i = 0; i <= deg_omega;i++) {
     tmp = 0;
     for (j=i;j >= 0; j--) {
-      if ((s[i - j] != A0) && (lambda[j] != A0))
-        tmp ^= ALPHA_TO[MODNN(s[i - j] + lambda[j])];
+      if ((s[i - j] != AO40_A0) && (lambda[j] != AO40_A0))
+        tmp ^= AO40_ALPHA_TO[AO40_MODNN(s[i - j] + lambda[j])];
     }
-    omega[i] = INDEX_OF[tmp];
+    omega[i] = AO40_INDEX_OF[tmp];
   }
 
   /*
    * Compute error values in poly-form. num1 = omega(inv(X(l))), num2 =
-   * inv(X(l))**(FCR-1) and den = lambda_pr(inv(X(l))) all in poly-form
+   * inv(X(l))**(AO40_FCR-1) and den = lambda_pr(inv(X(l))) all in poly-form
    */
   for (j = count-1; j >=0; j--) {
     num1 = 0;
     for (i = deg_omega; i >= 0; i--) {
-      if (omega[i] != A0)
-        num1  ^= ALPHA_TO[MODNN(omega[i] + i * root[j])];
+      if (omega[i] != AO40_A0)
+        num1  ^= AO40_ALPHA_TO[AO40_MODNN(omega[i] + i * root[j])];
     }
-    num2 = ALPHA_TO[MODNN(root[j] * (FCR - 1) + NN)];
+    num2 = AO40_ALPHA_TO[AO40_MODNN(root[j] * (AO40_FCR - 1) + AO40_NN)];
     den = 0;
     
     /* lambda[i+1] for i even is the formal derivative lambda_pr of lambda[i] */
-    for (i = MIN(deg_lambda,NROOTS-1) & ~1; i >= 0; i -=2) {
-      if (lambda[i+1] != A0)
-        den ^= ALPHA_TO[MODNN(lambda[i+1] + i * root[j])];
+    for (i = AO40_MIN(deg_lambda,AO40_NROOTS-1) & ~1; i >= 0; i -=2) {
+      if (lambda[i+1] != AO40_A0)
+        den ^= AO40_ALPHA_TO[AO40_MODNN(lambda[i+1] + i * root[j])];
     }
 #if DEBUG >= 1
     if (den == 0) {
@@ -293,13 +293,13 @@ int8_t decode_rs_8(uint8_t *data, int *eras_pos, int no_eras) {
     }
 #endif
     /* Apply error to data */
-    if (num1 != 0 && loc[j] >= PAD) {
-      data[loc[j]-PAD] ^= ALPHA_TO[MODNN(INDEX_OF[num1] + INDEX_OF[num2] + NN - INDEX_OF[den])];
+    if (num1 != 0 && loc[j] >= AO40_PAD) {
+      data[loc[j]-AO40_PAD] ^= AO40_ALPHA_TO[AO40_MODNN(AO40_INDEX_OF[num1] + AO40_INDEX_OF[num2] + AO40_NN - AO40_INDEX_OF[den])];
     }
   }
 
 finish:
-  if (eras_pos != NULL) {
+  if (eras_pos != AO40_NULL) {
     for (i=0;i<count;i++)
       eras_pos[i] = loc[i];
   }
