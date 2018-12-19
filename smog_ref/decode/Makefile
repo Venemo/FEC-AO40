@@ -1,30 +1,30 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -O3 -std=c99
-LDFLAGS = -L. -ldecref
 RM = rm
 AR = ar
 
-.PHONY: all
-all: libdecref dec_usage
 
-dec_usage: libdecref dec_usage.c
-	$(CC) dec_usage.c $(LDFLAGS) -o dec_usage
+all: usage
 
-libdecref: dec_ref.o rs/decode_rs.o viterbi/spiral-vit_scalar.o
-	$(AR) rcs libdecref.a dec_ref.o rs/decode_rs.o viterbi/spiral-vit_scalar.o
+ao40_decode_message.o: ao40_decode_message.c ao40_decode_message.h
+	$(CC) $(CFLAGS) -c ao40_decode_message.c
 
-dec_ref.o: dec_ref.c
-	$(CC) $(CFLAGS) -c -fPIC dec_ref.c -o dec_ref.o
+ao40_decode_rs.o: ao40_decode_rs.c ao40_decode_rs.h
+	$(CC) $(CFLAGS) -c ao40_decode_rs.c
 
-rs/decode_rs.o: rs/decode_rs.c
-	$(CC) $(CFLAGS) -c -fPIC rs/decode_rs.c -o rs/decode_rs.o
+ao40_spiral-vit_scalar.o: ao40_spiral-vit_scalar.c
+	$(CC) $(CFLAGS) -c ao40_spiral-vit_scalar.c
 
-viterbi/spiral-vit_scalar.o: viterbi/spiral-vit_scalar.c
-	$(CC) $(CFLAGS) -c -fPIC viterbi/spiral-vit_scalar.c -o viterbi/spiral-vit_scalar.o
+dec_usage.o: dec_usage.c ao40_decode_message.h
+	$(CC) $(CFLAGS) -c dec_usage.c
+
+usage: ao40_decode_message.o ao40_decode_rs.o ao40_spiral-vit_scalar.o dec_usage.o
+	$(CC) $(CFLAGS) ao40_decode_message.o ao40_decode_rs.o ao40_spiral-vit_scalar.o dec_usage.o -o usage
 
 clean: clean-debug
-	-$(RM) libdecref.a dec_ref.o rs/decode_rs.o viterbi/spiral-vit_scalar.o
-	-$(RM) dec_usage
+	-$(RM) *.o
+	-$(RM) usage
 
 clean-debug:
 	-$(RM) debug_*
+
