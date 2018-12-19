@@ -35,26 +35,31 @@ U :    0 |    4 |    0         |
 
 */
 
-#define INTERLEAVER_PILOT_BITS   80
-#define INTERLEAVER_STEP_SIZE    51
-#define INTERLEAVER_SIZE_BITS  2652 // 51*52 with 80 pilot bits
-#define INTERLEAVER_SIZE_BYTES  ((INTERLEAVER_SIZE_BITS + 7) / 8)
+#define AO40SHORT_INTERLEAVER_PILOT_BITS   80
+#define AO40SHORT_INTERLEAVER_STEP_SIZE    51
+#define AO40SHORT_INTERLEAVER_SIZE_BITS  2652 // 51*52 with 80 pilot bits
+#define AO40SHORT_INTERLEAVER_SIZE_BYTES  ((AO40SHORT_INTERLEAVER_SIZE_BITS + 7) / 8)
 
-#define SYNC_POLY      0x48
-#define SCRAMBLER_POLY 0x95
-#define CPOLYA         0x4f // 79
-#define CPOLYB         0x6d // 109
-#define GF_POLY        0x187
-#define A0             255
+#define AO40SHORT_SYNC_POLY      0x48
+#define AO40SHORT_SCRAMBLER_POLY 0x95
+#define AO40SHORT_CPOLYA         0x4f // 79
+#define AO40SHORT_CPOLYB         0x6d // 109
+#define AO40SHORT_GF_POLY        0x187
+#define AO40SHORT_A0             255
 
-//#define LOW_MEMORY          // low memory workaround to avoid LUT (and preserve 512byte)
-//#define ENABLE_BIT_OUTPUT  // enable debug bit output mode
-#define MSBFISRT           // the first bit of bytes of encode_data_bit is the MSB
+//#define AO40SHORT_ENABLE_BIT_OUTPUT  // enable debug bit output mode
 
-void encode_short_data(uint8_t *data, uint8_t *encoded);
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
+void encode_short_data(const uint8_t *data, uint8_t *encoded);
 
-#ifdef ENABLE_BIT_OUTPUT
+#ifdef AO40SHORT_ENABLE_BIT_OUTPUT
 void encode_short_data_bit(uint8_t *data, uint8_t *bit_encoded);
 #endif
+
+#ifdef __cplusplus
+}
+#endif // __cplusplus
 
 #endif

@@ -1,15 +1,15 @@
+
 /* 
  * Reference encoder for proposed coded AO-40 telemetry format - v1.0  7 Jan 2002
+ * Revised and modified for SMOG-1 by szabolor
+ *
  * Copyright 2002, Phil Karn, KA9Q
+ * Copyright 2015-2017, Lóránt Szabó
+ *
  * This software may be used under the terms of the GNU Public License (GPL)
  */
 
-/*
- * Revised and modified by szabolor
- * 2015 - 2016
- */
-
-#ifdef DEBUG_MODE
+#ifdef AO40SHORT_DEBUG_MODE
 #include <stdio.h>
 #endif
 
@@ -17,11 +17,11 @@
 #include "enc_short_msg.h"
 
 static const uint8_t RS_poly[] = {249,59,66,4,43,126,251,97,30,3,213,50,66,170,5,24};
-uint8_t RS_block[32];
+static uint8_t RS_block[32];
 static uint16_t bit_count;
 static uint8_t  Scrambler;
 static uint8_t  Conv_sr;
-uint8_t *Interleaver;
+static uint8_t *Interleaver;
 
 #define INDEX_OF(x) ( Index_of[ (x) ] )
 #define ALPHA_TO(x) ( Alpha_to[ (x) ] )
@@ -79,7 +79,7 @@ static inline uint8_t parity(uint8_t x) {
 /* 2566 bit -> 48 bit (6 byte) x 54 row
    (324 byte) - 26 spare bits are used as pilot bits */
 static void interleave_symbol(uint8_t c) {
-#if (DEBUG_MODE >= 3)
+#if (AO40SHORT_DEBUG_MODE >= 3)
   printf("%4d: %3d - %02x > %d\n", bit_count, bit_count >> 3, ( 1 << ( 7 - (bit_count & 7) ) ), c != 0);
 #endif
   if (c) {
@@ -88,9 +88,9 @@ static void interleave_symbol(uint8_t c) {
     Interleaver[bit_count >> 3] &= ~( 1 << ( 7 - (bit_count & 7) ) );
   }
 
-  bit_count += INTERLEAVER_STEP_SIZE;
-  if (bit_count >= INTERLEAVER_SIZE_BITS) {
-    bit_count -= (INTERLEAVER_SIZE_BITS - 1);
+  bit_count += AO40SHORT_INTERLEAVER_STEP_SIZE;
+  if (bit_count >= AO40SHORT_INTERLEAVER_SIZE_BITS) {
+    bit_count -= (AO40SHORT_INTERLEAVER_SIZE_BITS - 1);
   }
 }
 
@@ -99,23 +99,23 @@ static void encode_and_interleave(uint8_t c, uint8_t cnt) {
     // Data is processed by MSB bit first
     Conv_sr = (Conv_sr << 1) | (c >> 7);
     c <<= 1;
-    interleave_symbol(parity(Conv_sr & CPOLYA));
-#ifndef DEBUG_MODE
-    interleave_symbol(!parity(Conv_sr & CPOLYB)); /* Second encoder symbol is inverted */
+    interleave_symbol(parity(Conv_sr & AO40SHORT_CPOLYA));
+#ifndef AO40SHORT_DEBUG_MODE
+    interleave_symbol(!parity(Conv_sr & AO40SHORT_CPOLYB)); /* Second encoder symbol is inverted */
 #else
-    interleave_symbol(parity(Conv_sr & CPOLYB)); // hide so many bit-flips...
+    interleave_symbol(parity(Conv_sr & AO40SHORT_CPOLYB)); // hide so many bit-flips...
 #endif
   }    
 }
 
 static void scramble_and_encode(uint8_t c) {
   uint8_t i;
-#ifndef DEBUG_MODE
+#ifndef AO40SHORT_DEBUG_MODE
   c ^= Scrambler;
 #endif
   // May be unroll-able... (if code size is ok)
   for (i = 0; i < 8; ++i) {
-    Scrambler = (Scrambler << 1) | parity(Scrambler & SCRAMBLER_POLY);
+    Scrambler = (Scrambler << 1) | parity(Scrambler & AO40SHORT_SCRAMBLER_POLY);
   }
   encode_and_interleave(c, 8);
 }
@@ -127,7 +127,7 @@ static void encode_byte(uint8_t c){
 
   feedback = INDEX_OF(c ^ RS_block[0]);
   
-  if (feedback != A0){
+  if (feedback != AO40SHORT_A0){
     for (i = 0; i < 15; ++i) {
       t = ALPHA_TO(mod255(feedback + RS_poly[i]));
       RS_block[i+1] ^= t;
@@ -140,7 +140,7 @@ static void encode_byte(uint8_t c){
     RS_block[i] = RS_block[i+1];
   }
 
-  if (feedback != A0) {
+  if (feedback != AO40SHORT_A0) {
     RS_block[31] = ALPHA_TO(feedback);
   } else {
     RS_block[31] = 0;
@@ -155,11 +155,11 @@ static void encode_byte(uint8_t c){
  * Encoding data with the prevously described method
  *  - data:    exactly 128 byte sized uint8_t array
  *             It stores the data to be encoded
- *  - encoded: exactly INTERLEAVER_SIZE_BYTES byte sized uint8_t array
+ *  - encoded: exactly AO40SHORT_INTERLEAVER_SIZE_BYTES byte sized uint8_t array
  *             It holds the encoded data in byte format
  */ 
 
-void encode_short_data(uint8_t *data, uint8_t *encoded) {
+void encode_short_data(const uint8_t *data, uint8_t *encoded) {
   uint16_t i;
   uint16_t sr;
   uint8_t j;
@@ -176,12 +176,12 @@ void encode_short_data(uint8_t *data, uint8_t *encoded) {
   }
 
   // use `memset` if it's available through other otherwise required libraries
-  for (i = 0; i < INTERLEAVER_SIZE_BYTES; ++i) {
+  for (i = 0; i < AO40SHORT_INTERLEAVER_SIZE_BYTES; ++i) {
     Interleaver[i] = 0;
   }
 
 /*
-  Put some (INTERLEAVER_STEP_SIZE) pilot bits here!
+  Put some (AO40SHORT_INTERLEAVER_STEP_SIZE) pilot bits here!
   Bits are: 11111110000111011110
   Pilot bits are located in beginning of every odd row, 
   thus one pilot bit occures by 12 byte of interleaved 
@@ -189,15 +189,15 @@ void encode_short_data(uint8_t *data, uint8_t *encoded) {
   26 pilot bits, there is no pilot bit added to the last odd row (53rd).
 */
   sr = 0x7f; // 7-bit shift register is used
-#if (DEBUG_MODE >= 2)
-  printf("Interleaving %d pilot bits...\n", INTERLEAVER_PILOT_BITS);
+#if (AO40SHORT_DEBUG_MODE >= 2)
+  printf("Interleaving %d pilot bits...\n", AO40SHORT_INTERLEAVER_PILOT_BITS);
 #endif
-  for (i = 0; i < INTERLEAVER_PILOT_BITS; ++i) {
+  for (i = 0; i < AO40SHORT_INTERLEAVER_PILOT_BITS; ++i) {
     interleave_symbol(sr & 0x40);
-    sr = (sr << 1) | parity(sr & SYNC_POLY);
+    sr = (sr << 1) | parity(sr & AO40SHORT_SYNC_POLY);
   }
 
-#if (DEBUG_MODE >= 2)
+#if (AO40SHORT_DEBUG_MODE >= 2)
   printf("Encoding data...\n");
 #endif
   // RS code, convolutional code, scramble and interleave data
@@ -206,19 +206,19 @@ void encode_short_data(uint8_t *data, uint8_t *encoded) {
   }
 
 /* // Useful if multiple separated pilot bits are required instead of
-   // a group of pilot bits per INTERLEAVER_STEP_SIZE
-#if (INTERLEAVER_PILOT_BITS > INTERLEAVER_STEP_SIZE)
-#if (DEBUG_MODE >= 2)
-  printf("Interleaving remaining %d pilot bits...\n", INTERLEAVER_PILOT_BITS - INTERLEAVER_STEP_SIZE);
+   // a group of pilot bits per AO40SHORT_INTERLEAVER_STEP_SIZE
+#if (AO40SHORT_INTERLEAVER_PILOT_BITS > AO40SHORT_INTERLEAVER_STEP_SIZE)
+#if (AO40SHORT_DEBUG_MODE >= 2)
+  printf("Interleaving remaining %d pilot bits...\n", AO40SHORT_INTERLEAVER_PILOT_BITS - AO40SHORT_INTERLEAVER_STEP_SIZE);
 #endif
-  for (; i < INTERLEAVER_PILOT_BITS; ++i) {
+  for (; i < AO40SHORT_INTERLEAVER_PILOT_BITS; ++i) {
     interleave_symbol(sr & 0x40);
-    sr = (sr << 1) | parity(sr & SYNC_POLY);
+    sr = (sr << 1) | parity(sr & AO40SHORT_SYNC_POLY);
   }
 #endif
 */
 
-#if (DEBUG_MODE >= 2)
+#if (AO40SHORT_DEBUG_MODE >= 2)
   printf("Encoding parity...\n");
 #endif
   // Put the RS parity into convolutional code
@@ -226,7 +226,7 @@ void encode_short_data(uint8_t *data, uint8_t *encoded) {
     scramble_and_encode(RS_block[j]);
   }
 
-#if (DEBUG_MODE >= 2)
+#if (AO40SHORT_DEBUG_MODE >= 2)
   printf("Encoding tail bits...\n");
 #endif
   // Convolutional code tail bits (to put SR into all-0 state)
@@ -234,16 +234,16 @@ void encode_short_data(uint8_t *data, uint8_t *encoded) {
 }
 
 // for testing purpose enable built-in byte->bit converter
-#ifdef ENABLE_BIT_OUTPUT
+#ifdef AO40SHORT_ENABLE_BIT_OUTPUT
 void encode_short_data_bit(uint8_t *data, uint8_t *bit_encoded) {
-  uint8_t encoded[INTERLEAVER_SIZE_BYTES] = {0}; // TODO: this may only work with gcc (?!) 
-                              // - but this is only a debug function
+  uint8_t encoded[AO40SHORT_INTERLEAVER_SIZE_BYTES];
+  memset(encoded, 0, AO40SHORT_INTERLEAVER_SIZE_BYTES);
   uint16_t i;
   // encode to byte format
   encode_short_data(data, encoded);
 
   // convert to bit format: simply put 0 and 1 to the corresponding byte
-  for (i = 0; i < (INTERLEAVER_SIZE_BYTES*8); ++i) {
+  for (i = 0; i < (AO40SHORT_INTERLEAVER_SIZE_BYTES*8); ++i) {
 #ifdef MSBFIRST
     // MSB first
     bit_encoded[i] = ( (encoded[i >> 3] & (1 << (7 - (i & 7)))) != 0 );
