@@ -12,6 +12,7 @@
 
 #define AO40_RS_SIZE        320
 #define AO40_DATA_SIZE      256
+#define AO40_CODE_LENGTH    650
 #define AO40_FRAME_BITS    2560
 #define AO40_RS_BLOCK_SIZE  160
 

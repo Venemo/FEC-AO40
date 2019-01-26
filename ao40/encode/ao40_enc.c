@@ -10,7 +10,7 @@
  */
 
 #include <stdint.h>
-#include "enc_ref.h"
+#include "ao40_enc.h"
 
 #define AO40_SYNC_POLY      0x48
 #define AO40_SCRAMBLER_POLY 0x95
@@ -231,7 +231,7 @@ void encode_parity(void) {
   }
 }
 
-/**** ENCODER CODE ENDED ****/
+/**** ENCODER CODE END ****/
 
 /*
  * Encoding data with the prevously described method
@@ -241,7 +241,7 @@ void encode_parity(void) {
  *             It holds the encoded data in byte format
  */ 
 
-void encode_data(const uint8_t data[256], uint8_t encoded[650]) {
+void encode_data_ao40(const uint8_t data[256], uint8_t encoded[650]) {
   uint16_t i;
 
   // Use already allocated array to store encoded data
@@ -261,7 +261,7 @@ void encode_data(const uint8_t data[256], uint8_t encoded[650]) {
 
 // for testing purpose enable built-in byte->bit converter
 #ifdef AO40_ENABLE_BIT_OUTPUT
-void encode_data_bit(const uint8_t data[256], uint8_t bit_encoded[5200]) {
+void encode_data_bit_ao40(const uint8_t data[256], uint8_t bit_encoded[5200]) {
   uint8_t encoded[650] = {0};
   uint16_t i;
 

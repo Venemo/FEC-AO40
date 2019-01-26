@@ -1,6 +1,6 @@
 
-#ifndef ENC_REF_H
-#define ENC_REF_H
+#ifndef AO40_ENC_H
+#define AO40_ENC_H
 
 #include <stdint.h>
 
@@ -11,7 +11,10 @@
 extern "C" {
 #endif // __cplusplus
 
-void encode_data(const uint8_t *data, uint8_t *encoded);
+#define AO40_DATA_SIZE      256
+#define AO40_CODE_LENGTH    650
+
+void encode_data_ao40(const uint8_t data[AO40_DATA_SIZE], uint8_t encoded[AO40_CODE_LENGTH]);
 
 #ifdef AO40_ENABLE_BIT_OUTPUT
 void encode_data_bit(const uint8_t *data, uint8_t *bit_encoded);
